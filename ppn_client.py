@@ -17,8 +17,6 @@ from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.properties import ObjectProperty
 
-import time
-
 kivy.require("1.10.1")
 
 # initialize the frame dictionary
@@ -205,7 +203,8 @@ MyScreenManager:
 class ConnectPage(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        print(int(round(time.time() * 1000)), "build connect page")
+
+        print("build connect page")
         Clock.schedule_once(self.callback, 0.01)
 
     def callback(self, dt):
@@ -226,7 +225,7 @@ class ConnectPage(Screen):
         self.ids.ip.text = prev_ip
 
     def connect_button(self):
-        print(int(round(time.time() * 1000)), "Pushed connect button")
+        print("Pushed connect button")
         port = self.ids.port.text
         ip = self.ids.ip.text
         if port and ip:
@@ -247,10 +246,10 @@ class ConnectPage(Screen):
         port = int(self.ids.port.text)
         ip = self.ids.ip.text
 
-        print(int(round(time.time() * 1000)), "Prepare IH...")
+        print("Prepare IH...")
         # initialize the ImageHub object
         imageHub.connect("tcp://{}:{}".format(ip, IH_PORT))
-        print(int(round(time.time() * 1000)), "IH connect")
+        print("IH connect")
 
         if not socket_client.connect(ip, port, show_error):
             return
@@ -262,19 +261,6 @@ class InfoPage(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         print("build info page")
-        '''# Just one column
-        self.cols = 1
-
-        # And one label with bigger font and centered text
-        self.message = Label(halign="center", valign="middle", font_size=30)
-
-        # By default every widget returns it's side as [100, 100], it gets finally resized,
-        # but we have to listen for size change to get a new one
-        # more: https://github.com/kivy/kivy/issues/1044
-        self.message.bind(width=self.update_text_width)
-
-        # Add text widget to the layout
-        self.add_widget(self.message)'''
 
     # Called with a message, to update message text in widget
     def update_info(self, message):
@@ -289,23 +275,21 @@ class InfoPage(Screen):
 class CamPage(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        print(int(round(time.time() * 1000)), "build cam page")
+        print("build cam page")
 
     def on_pre_enter(self, *args):
         # must not happen on init, but can happen on start
 
         if not socket_client.listening:
-            print(int(round(time.time() * 1000)), "socket startup")
+            print("socket startup")
             socket_client.start_listening(self.incoming_message, show_error)
             Clock.schedule_once(self.receive_frame, timeout=1.5)
 
     def receive_frame(self, _):
         # receive RPi name and frame from the RPi and acknowledge the receipt
-        print(int(round(time.time() * 1000)), "302", socket_client.listening)
         (rpiName, frame) = imageHub.recv_image()
-        print(int(round(time.time() * 1000)), "304")
         imageHub.send_reply(b'OK')
-        print(int(round(time.time() * 1000)), "306")
+
         frame = cv2.flip(frame, 0)
         frameDict[rpiName] = frame
 
@@ -323,7 +307,7 @@ class CamPage(Screen):
     def incoming_message(self, message):
         args = pickle.loads(message)
         if args[0] == 'disconnect_ok':
-            print(int(round(time.time() * 1000)), args[0])
+            print(args[0])
             socket_client.listening = False
             App.get_running_app().stop()
 
@@ -338,19 +322,19 @@ class CamPage(Screen):
             socket_client.send(pickle.dumps(('set_roi', args[1], r)))
 
     def tracker_button(self):
-        print(int(round(time.time() * 1000)), "requesting tracker list...")
+        print("requesting tracker list...")
         socket_client.send(pickle.dumps(('trackers',)))
 
     def select_button(self):
-        print(int(round(time.time() * 1000)), "requesting selection")
+        print("requesting selection")
         socket_client.send(pickle.dumps(('get_frame',)))
 
     def clear_button(selfself):
-        print(int(round(time.time() * 1000)), "Clear button")
+        print("Clear button")
         socket_client.send(pickle.dumps(('clear_roi',)))
 
     def disconnect_button(self):
-        print(int(round(time.time() * 1000)), 'Requesting disconnect')
+        print('Requesting disconnect')
         Clock.unschedule(self.receive_frame) # prevents race condition
         socket_client.send(pickle.dumps(('disconnect',)))
 
@@ -383,39 +367,6 @@ class TrackerPage(Screen):
         # return to the CamPage screen
         socket_client.send(pickle.dumps(('set_tracker', number)))
         self.manager.current = 'cam_page'
-
-    '''
-    class ProjectSelectButton(Button):
-    def click_on_button(self, instance, touch, *args):
-        print(instance)
-        if self.collide_point(*touch.pos):
-            if touch.button == 'right':
-                print(self.id, "right mouse clicked")
-            elif touch.buttom == 'left':
-                print(self.id, "left mouse clicked")
-            return True
-        return super(ProjectSelectButton, self).on_touch_down(touch)
-
-
-    '''
-    '''
-    class MyGrid(GridLayout):
-        def __init__(self, **kwargs):
-            super(MyGrid, self).__init__(**kwargs)
-            self.add_buttons()
-
-        def add_buttons(self):
-            for i in xrange(5):
-                button = Button(
-                    text='X' + str(i),
-                    on_press=partial(self.X, number=i)
-                )
-                self.add_widget(button)
-
-        def X(self, caller, number):
-            print
-            caller, number
-    '''
 
 
 class MyScreenManager(ScreenManager):
@@ -451,37 +402,12 @@ class MyScreenManagerApp(App):
         return True
 
 
-class OCOTApp(App):
-    def build(self):
-        self.screen_manager = ScreenManager()
-
-        # Initial, connection screen
-        self.connect_page = ConnectPage()
-        screen = Screen(name='Connect')
-        screen.add_widget(self.connect_page)
-        self.screen_manager.add_widget(screen)
-
-        # Info page
-        self.info_page = InfoPage()
-        screen = Screen(name='Info')
-        screen.add_widget(self.info_page)
-        self.screen_manager.add_widget(screen)
-
-        return self.screen_manager
-
-    def create_cam_page(self):
-        self.cam_page = CamPage()
-        screen = Screen(name='Cam')
-        screen.add_widget(self.cam_page)
-        self.screen_manager.add_widget(screen)
-
-
 # Error callback function, used by sockets client
 # Updates info page with an error message, shows message and schedules exit in 10 seconds
 # time.sleep() won't work here - will block Kivy and page with error message won't show up
 def show_error(message):
     # using Window.get_parent_window()
-    print(int(round(time.time() * 1000)), "EXCEPTION: ", message)
+    print(message)
     win_ref = Window.get_parent_window().children[0]
     win_ref.ids.info_page.update_info(message)
     win_ref.current = 'info_page'

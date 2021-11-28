@@ -2,7 +2,7 @@
 
 import socket
 from threading import Thread
-import time
+
 # some globals
 client_socket = None
 socket_thread = None
@@ -51,9 +51,9 @@ def start_listening(incoming_message_callback, error_callback):
 
 def stop_listening():
     if socket_thread:
-        print(int(round(time.time() * 1000)), "stopping socket thread")
+        print("stopping socket thread")
         socket_thread.join()
-        print(int(round(time.time() * 1000)), "socket thread stopped")
+        print("socket thread stopped")
 
 # Listens for incoming messages
 def listen(incoming_message_callback, error_callback):
@@ -84,11 +84,11 @@ def listen(incoming_message_callback, error_callback):
 
                 # Print message to client
                 incoming_message_callback(message)
-            print(int(round(time.time() * 1000)), "socket done listening (inner)")
+            print("socket done listening (inner)")
         except Exception as e:
             # Any other exception - something happened, exit
             error_callback('Reading error: {}'.format(str(e)))
-            print(int(round(time.time() * 1000)), "Break")
+            print("Break after error")
             break
-    print(int(round(time.time() * 1000)), "socket done listening (outer)")
+    print("socket done listening (outer)")
     stop_listening()

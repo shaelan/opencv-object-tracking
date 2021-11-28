@@ -9,10 +9,6 @@ import zmq
 import argparse
 from imutils.video import VideoStream
 
-import time
-
-print_lock = threading.Lock()
-
 HEADER_LENGTH = 10
 
 IP = "127.0.0.1"
@@ -22,12 +18,12 @@ PORT = 1234
 ap = argparse.ArgumentParser()
 ap.add_argument("-s", "--server-ip", required=True,
                 help="ip address of the server to which the client will connect")
-ap.add_argument("-f", "--flip-code", required=False,
+ap.add_argument("-f", "--flip-code", required=False, default=1,
                 help="flip code: A flag to specify how to flip the image;"
                      "0 means flipping around the x-axis;"
                      "1 means flipping around y-axis;"
                      "-1 means flipping around both axes.")
-ih_args = vars(ap.parse_args())
+ih_args = ap.parse_args()
 
 (major_ver, minor_ver, subminor_ver) = (cv2.__version__).split('.')
 
@@ -72,29 +68,26 @@ class Streamer(threading.Thread):
         # Caches the selection of roi_frame and roi for changing trackers without making a new selection
         self.roi_frame = None
         self.roi = None
-        print(int(round(time.time() * 1000)), "thread init")
+        print("thread init")
 
     def sender_stop(self):
-        with print_lock:
-            print(int(round(time.time() * 1000)), "Release VS")
+        print("Release VS")
         self.vs.stream.release()
         self.vs.stop()
-        with print_lock:
-            print(int(round(time.time() * 1000)), "VS Released.")
+        print("VS Released.")
         self.sender.close()
         del self.vs  # release the camera -- this should actually work this time
 
     def run(self):
-        with print_lock:
-            print(int(round(time.time() * 1000)), "thread running")
+        print("thread running")
         frame_cropped_len = 0
-        connect_to = "tcp://{}:5555".format(ih_args["server_ip"])
+        connect_to = "tcp://{}:5555".format(ih_args.server_ip)
         self.sender = sender_start(connect_to)
         self.vs = VideoStream(src=0).start()
 
         time_between_restarts = 15  # number of seconds to sleep between sender restarts
         jpeg_quality = 95  # 0 to 100, higher is better quality, 95 is cv2 default
-        print(int(round(time.time() * 1000)), "beginning outer try")
+        print("beginning outer try")
         '''
         New model for this:
          - Run and send images, with or without overlay
@@ -111,18 +104,17 @@ class Streamer(threading.Thread):
             # print("read frame")
             # Read a new frame (this must be above queue processing since set_roi overwrites the frame data once
             frame = self.vs.read()
-            frame = cv2.flip(frame, 1)
+            frame = cv2.flip(frame, ih_args.flip_code)
 
             # ret_code, jpg_buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality])
 
             # print("frame read")
             try:
-                # process queue message
+                # process a queue message
                 val = self.my_queue.get_nowait()
                 if val:
                     message, *args = val
-                    with print_lock:
-                        print(int(round(time.time() * 1000)), "got from queue", message)
+                    print("got from queue", message)
                     '''
                     disconnect ('disconnect', client_timeout_in_sec)
                         responds to the client with a disconnect_ok message once the video stream has been stopped.
@@ -140,11 +132,11 @@ class Streamer(threading.Thread):
                     '''
                     if message == 'set_roi':
                         self.roi_frame, self.roi = args
-                        print(int(round(time.time() * 1000)), "> frame and roi are present")
+                        print("> frame and roi are present")
                         frame_cropped_len = len(self.roi_frame[int(self.roi[1]):int(self.roi[1] + self.roi[3]),
                                                                int(self.roi[0]):int(self.roi[0] + self.roi[2])])
                         if frame_cropped_len > 0:
-                            print(int(round(time.time() * 1000)), "> cropped frame selected", self.roi)
+                            print("> cropped frame selected", self.roi)
                             # Initialize tracker with input frame and bounding box
                             del self.tracker
                             self.tracker = self.setup_tracker()
@@ -180,11 +172,11 @@ class Streamer(threading.Thread):
                     if message == 'set_tracker':
                         self.tracker_type = self.tracker_types[args[0]]
                         if self.roi_frame is not None and self.roi is not None:
-                            print(int(round(time.time() * 1000)), "< frame and roi are present")
+                            print("< frame and roi are present")
                             frame_cropped_len = len(self.roi_frame[int(self.roi[1]):int(self.roi[1] + self.roi[3]),
                                                                    int(self.roi[0]):int(self.roi[0] + self.roi[2])])
                             if frame_cropped_len > 0:
-                                print(int(round(time.time() * 1000)), "< cropped frame selected", self.roi)
+                                print("< cropped frame selected", self.roi)
                                 # Initialize tracker with input frame and bounding box
                                 del self.tracker
                                 self.tracker = self.setup_tracker()
@@ -276,29 +268,15 @@ class Streamer(threading.Thread):
                             (50, 170, 50), 2);
                 frame = tracker_frame
 
-            else:
-                '''
-                # read the frame from the camera and send it to the client
-                ok, image = vs.read()
-                buffer = pickle.dumps(image)
-                message = f'{len(buffer):<10}'.encode('utf-8')+buffer
-                self.client_socket.sendall(message)
-                '''
-                pass
-
             try:
-                # print("sending frame")
                 self.sender.send_image(self.client_name, frame)
-                print(int(round(time.time() * 1000)), "sent")
             except (zmq.ZMQError, zmq.ContextTerminated, zmq.Again):
                 self.sender_stop()
-                print(int(round(time.time() * 1000)), 'Closing ImageSender.')
-                # @TODO: Send disconnect_ok to client in this case
+                print('286: Closing ImageSender.')
                 break
 
         # end while loop
-        with print_lock:
-            print(int(round(time.time() * 1000)), "thread ending")
+        print("thread ending")
 
     def setup_tracker(self):
         tracker = None
@@ -397,9 +375,7 @@ def main():
                 # Also save username and username header
                 clients[client_socket] = user
 
-                with print_lock:
-                    print('Accepted new connection from {}:{}, username: {}'.format(*client_address,
-                                                                                    user['data'].decode('utf-8')))
+                print('Accepted new connection from {}:{}, username: {}'.format(*client_address, user['data'].decode('utf-8')))
 
                 t = Streamer(client_socket, queue.Queue())
                 t.start()
@@ -408,8 +384,7 @@ def main():
                 threads[client_socket] = t
 
                 for thread in threading.enumerate():
-                    with print_lock:
-                        print("thread >", thread.name)
+                    print('thread >', thread.name)
 
             # Else existing socket is sending a message
             else:
@@ -418,11 +393,9 @@ def main():
 
                 # If False, client disconnected, cleanup
                 if message is False:
-                    with print_lock:
-                        print('Closed connection from: {}'.format(clients[notified_socket]['data'].decode('utf-8')))
+                    print('Closed connection from: {}'.format(clients[notified_socket]['data'].decode('utf-8')))
                     t = threads[notified_socket]
                     t.my_queue.put(('disconnect', -1))
-                    client_disconnecting = True
                 else:
                     user = clients[notified_socket] # Get user by notified socket, so we will know who sent the message
 
@@ -448,43 +421,26 @@ def main():
                     '''
                     t = threads[notified_socket]
                     t.my_queue.put(pickle.loads(message['data']))
-                    print(int(round(time.time() * 1000)), "530 putting in queue: ", pickle.loads(message['data'])[0])
+                    print('530 putting in queue: ', pickle.loads(message['data'])[0])
 
                 if message is False or pickle.loads(message['data'])[0] == 'disconnect':
-                    print(int(round(time.time() * 1000)), "joining thread")
+                    print(t.name, 'shutting down thread')
                     t.join()
-                    print(int(round(time.time() * 1000)), "done joining thread")
+                    print(t.name, 'done joining thread')
                     send_client_message(notified_socket, ('disconnect_ok',))
-                    print(int(round(time.time() * 1000)), "Closing socket")
+                    print('Closing socket')
                     sockets_list.remove(notified_socket)
                     del clients[notified_socket]
                     notified_socket.close()
 
         # It's not really necessary to have this, but will handle some socket exceptions just in case
         for notified_socket in exception_sockets:
-            print(int(round(time.time() * 1000)), "** disconnecting a client")
+            print("** disconnecting a client")
             t = threads[notified_socket]
             t.my_queue.put('disconnect', 0)
             t.join()
-            print(int(round(time.time() * 1000)), "** thread ended")
+            print("** thread ended")
 
-            '''
-            #old handler code
-            cleanup_client(notified_socket)
-
-            with print_lock:
-                for thread in threading.enumerate():
-                    print("<>", thread.name)
-
-            # Remove from list for socket.socket()
-            sockets_list.remove(notified_socket)
-
-            # Remove from our list of users
-            del clients[notified_socket]
-
-            # Remove from our list of threads
-            del threads[notified_socket]
-            '''
         # @TODO: add a way to cleanly exit from this server.
 
 
