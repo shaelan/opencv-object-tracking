@@ -18,11 +18,12 @@ PORT = 1234
 ap = argparse.ArgumentParser()
 ap.add_argument("-s", "--server-ip", required=True,
                 help="ip address of the server to which the client will connect")
-ap.add_argument("-f", "--flip-code", required=False, default=1,
+ap.add_argument("-f", "--flip-code", required=False, default=None,
                 help="flip code: A flag to specify how to flip the image;"
                      "0 means flipping around the x-axis;"
                      "1 means flipping around y-axis;"
-                     "-1 means flipping around both axes.")
+                     "-1 means flipping around both axes."
+                     "None means cv2.flip is not called.")
 ih_args = ap.parse_args()
 
 (major_ver, minor_ver, subminor_ver) = (cv2.__version__).split('.')
@@ -62,6 +63,7 @@ class Streamer(threading.Thread):
         self.tracker_type = self.tracker_types[1]
         self.tracker = self.setup_tracker()
         self.tracker_ok = False
+        self.flip_list = [0, 1, -1, None]
         self.vs = None
         self.sender = None
 
@@ -76,7 +78,7 @@ class Streamer(threading.Thread):
         self.vs.stop()
         print("VS Released.")
         self.sender.close()
-        del self.vs  # release the camera -- this should actually work this time
+        del self.vs
 
     def run(self):
         print("thread running")
@@ -104,7 +106,8 @@ class Streamer(threading.Thread):
             # print("read frame")
             # Read a new frame (this must be above queue processing since set_roi overwrites the frame data once
             frame = self.vs.read()
-            frame = cv2.flip(frame, ih_args.flip_code)
+            if ih_args.flip_code is not None:
+                frame = cv2.flip(frame, ih_args.flip_code)
 
             # ret_code, jpg_buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality])
 
@@ -181,6 +184,14 @@ class Streamer(threading.Thread):
                                 del self.tracker
                                 self.tracker = self.setup_tracker()
                                 self.tracker_ok = self.tracker.init(self.roi_frame, self.roi)
+
+                    '''flip ('flip', flip_index)
+                        adjusts the value stored in ih_args.flip_code) for the server-side call to cv2.flip 
+                        list index: 0, 1, 2, 3 corresponding to the server-side list index of [0, 1, -1, None]
+                    '''
+                    if message == 'set_flip':
+                        print(message, args)
+                        ih_args.flip_code = self.flip_list[args[0]]
 
                 self.my_queue.task_done()
             except queue.Empty:
@@ -426,8 +437,11 @@ def main():
                 if message is False or pickle.loads(message['data'])[0] == 'disconnect':
                     print(t.name, 'shutting down thread')
                     t.join()
-                    print(t.name, 'done joining thread')
-                    send_client_message(notified_socket, ('disconnect_ok',))
+                    if message:
+                        print(t.name, 'done joining thread', message, pickle.loads(message['data'])[0])
+                        send_client_message(notified_socket, ('disconnect_ok',))
+                    else:
+                        print("forced closure")
                     print('Closing socket')
                     sockets_list.remove(notified_socket)
                     del clients[notified_socket]
