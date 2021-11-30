@@ -9,6 +9,14 @@ import zmq
 import argparse
 from imutils.video import VideoStream
 
+
+def int_with_none(value):
+    if value == 'None':
+        return None
+    else:
+        return int(value)
+
+
 HEADER_LENGTH = 10
 
 IP = "127.0.0.1"
@@ -18,15 +26,17 @@ PORT = 1234
 ap = argparse.ArgumentParser()
 ap.add_argument("-s", "--server-ip", required=True,
                 help="ip address of the server to which the client will connect")
-ap.add_argument("-f", "--flip-code", required=False, default=None,
+ap.add_argument("-f", "--flip-code", required=False, default=None, type=int_with_none, choices=[0, 1, -1, None],
                 help="flip code: A flag to specify how to flip the image;"
                      "0 means flipping around the x-axis;"
                      "1 means flipping around y-axis;"
                      "-1 means flipping around both axes."
-                     "None means cv2.flip is not called.")
+                     "None means cv2.flip is not called (default).")
 ih_args = ap.parse_args()
 
 (major_ver, minor_ver, subminor_ver) = (cv2.__version__).split('.')
+
+
 
 
 def sender_start(connect_to=None):

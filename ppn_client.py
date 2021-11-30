@@ -1,5 +1,6 @@
 # import the necessary packages
 import os
+os.environ["KIVY_NO_ARGS"] = "1"
 import cv2
 import sys
 import kivy
@@ -18,27 +19,33 @@ from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.properties import ObjectProperty
 
+
+def int_with_none(value):
+    if value == 'None':
+        return None
+    else:
+        return int(value)
+
+
+flip_list = [0, 1, -1, None]
+
 ap = argparse.ArgumentParser()
-ap.add_argument("-e", "--enable-flip-codes", required=False, default=0,
-                help="enable flip code buttons in UI;"
-                     "0 means disabled"
-                     "1 means enabled")
-ap.add_argument("-f", "--flip-code", required=False, default=0,
+ap.add_argument("-e", "--enable-flip-codes", required=False, default=0, action="store_true",
+                help="enable flip code buttons in UI.")
+ap.add_argument("-f", "--flip-code", required=False, default=0, type=int_with_none, choices=[0, 1, -1, None],
                 help="flip code: A flag to specify how to flip the image;"
-                     "0 means flipping around the x-axis;"
+                     "0 means flipping around the x-axis (default);"
                      "1 means flipping around y-axis;"
-                     "-1 means flipping around both axes."
+                     "-1 means flipping around both axes;"
                      "None means cv2.flip is not called.")
-ap.add_argument("-s", "--server-flip-code", required=False, default=None,
+ap.add_argument("-s", "--server-flip-code", required=False, default=None, type=int_with_none, choices=[0, 1, -1, None],
                 help="server flip code: A flag to specify how the server will flip the image;"
                      "0 means flipping around the x-axis;"
                      "1 means flipping around y-axis;"
                      "-1 means flipping around both axes;"
-                     "None means cv2.flip is not called.")
+                     "None means cv2.flip is not called (default).")
 
 ih_args = ap.parse_args()
-
-flip_list = [0, 1, -1, None]
 
 kivy.require("1.10.1")
 
