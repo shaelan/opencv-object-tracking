@@ -89,7 +89,6 @@ MyScreenManager:
         name: "tracker_page"
         manager: screen_manager
 
-
 <MyResponsiveGridLayout@GridLayout>:
     cols: 1 if root.width < 200 else 2 if root.width < 400 else 4
 
@@ -122,42 +121,52 @@ MyScreenManager:
     AnchorLayout: 
         anchor_x: 'center'
         anchor_y: 'center'
-        height: responsive_grid.height
+        #height: responsive_grid.height
 
         MyGridLayout:
-            id: responsive_grid
-            cols: 1 if root.width < 400 else 3
-            spacing: 5, 5
-            padding: 5, 5
-            MyGridLayout:
-                cols: 2
-                MyLabel:
-                    id: label_ip
-                    text: "IP Address:"
-                MyTextInput:
-                    id: ip
+            cols: 1
 
             MyGridLayout:
-                cols: 2
+                cols: 1
                 MyLabel:
-                    id: label_port
-                    text: "Port:"
-                MyTextInput:
-                    id: port
+                    id: label_error
+                    width: self.parent.width
+                    halign: 'center'
 
             MyGridLayout:
-                size_hint_x: 1 if root.width < 400 else None
-                width: 1 if root.width < 400 else self.minimum_width
-                cols: 2
-                Label:
-                    text: ''
-                MyButton:
-                    padding: 10, 0
-                    size_hint_x: None
-                    size_x: 56
-                    id: connect_button
-                    text: "Connect"
-                    on_release: root.connect_button()
+                id: responsive_grid
+                cols: 1 if root.width < 400 else 3
+                spacing: 5, 5
+                padding: 5, 5
+                MyGridLayout:
+                    cols: 2
+                    MyLabel:
+                        id: label_ip
+                        text: "IP Address:"
+                    MyTextInput:
+                        id: ip
+
+                MyGridLayout:
+                    cols: 2
+                    MyLabel:
+                        id: label_port
+                        text: "Port:"
+                    MyTextInput:
+                        id: port
+
+                MyGridLayout:
+                    size_hint_x: 1 if root.width < 400 else None
+                    width: 1 if root.width < 400 else self.minimum_width
+                    cols: 2
+                    Label:
+                        text: ''
+                    MyButton:
+                        padding: 10, 0
+                        size_hint_x: None
+                        size_x: 56
+                        id: connect_button
+                        text: "Connect"
+                        on_release: root.connect_button()
 
 <InfoPage>:
     id: '_info_page_'
@@ -229,72 +238,80 @@ MyScreenManager:
             padding: 5, 5
 """
 
-
 if ih_args.enable_flip_codes:
     root_widget = """
-    #:kivy 1.10.0
-    MyScreenManager:
-        id: screen_manager
+#:kivy 1.10.0
+MyScreenManager:
+    id: screen_manager
 
-        connect_page: connect_page
-        info_page: info_page
-        cam_page: cam_page
-        tracker_page: tracker_page
+    connect_page: connect_page
+    info_page: info_page
+    cam_page: cam_page
+    tracker_page: tracker_page
 
-        ConnectPage:
-            id: connect_page
-            name: "connect_page"
-            manager: screen_manager
+    ConnectPage:
+        id: connect_page
+        name: "connect_page"
+        manager: screen_manager
 
-        InfoPage:
-            id: info_page
-            name: "info_page"
-            manager: screen_manager
+    InfoPage:
+        id: info_page
+        name: "info_page"
+        manager: screen_manager
 
-        CamPage:
-            id: cam_page
-            name: "cam_page"
-            manager: screen_manager
+    CamPage:
+        id: cam_page
+        name: "cam_page"
+        manager: screen_manager
 
-        TrackerPage:
-            id: tracker_page
-            name: "tracker_page"
-            manager: screen_manager
+    TrackerPage:
+        id: tracker_page
+        name: "tracker_page"
+        manager: screen_manager
 
+<MyResponsiveGridLayout@GridLayout>:
+    cols: 1 if root.width < 200 else 2 if root.width < 400 else 3
 
-    <MyResponsiveGridLayout@GridLayout>:
-        cols: 1 if root.width < 200 else 2 if root.width < 400 else 3
+<MyTextInput@TextInput>:
+    multiline: False
+    size_hint_y: None
+    height: self.minimum_height
+    text_size: self.size
+    padding: [1,0] # somehow this makes the box as tall as the labels 
+    valign: 'middle'
 
-    <MyTextInput@TextInput>:
-        multiline: False
-        size_hint_y: None
-        height: self.minimum_height
-        text_size: self.size
-        padding: [1,0] # somehow this makes the box as tall as the labels 
-        valign: 'middle'
+<MyLabel@Label>:
+    height: self.texture_size[1]
+    size_hint: None, None
+    valign: 'middle'
+    halign: 'right'
 
-    <MyLabel@Label>:
-        height: self.texture_size[1]
-        size_hint: None, None
-        valign: 'middle'
-        halign: 'right'
+<MyButton@Button>:
+    size_hint: 0.05, None
+    size: self.texture_size
 
-    <MyButton@Button>:
-        size_hint: 0.05, None
-        size: self.texture_size
+<MyGridLayout@GridLayout>: # for Connect Page Grids
+    size_hint_y: None # sets the height properly
+    height: self.minimum_height
 
-    <MyGridLayout@GridLayout>: # for Connect Page Grids
-        size_hint_y: None # sets the height properly
-        height: self.minimum_height
+<ConnectPage>:
+    id: '_connect_page_'
+    name: '_connect_page_'
 
-    <ConnectPage>:
-        id: '_connect_page_'
-        name: '_connect_page_'
+    AnchorLayout: 
+        anchor_x: 'center'
+        anchor_y: 'center'
+        height: responsive_grid.height
 
-        AnchorLayout: 
-            anchor_x: 'center'
-            anchor_y: 'center'
-            height: responsive_grid.height
+        MyGridLayout:
+            cols: 1
+
+            MyGridLayout:
+                cols: 1
+                MyLabel:
+                    id: label_error
+                    width: self.parent.width
+                    halign: 'center'
 
             MyGridLayout:
                 id: responsive_grid
@@ -331,82 +348,82 @@ if ih_args.enable_flip_codes:
                         text: "Connect"
                         on_release: root.connect_button()
 
-    <InfoPage>:
-        id: '_info_page_'
-        name: '_info_page_'
-        GridLayout:
-            cols: 1
-            Label:
-                id: message
-                text: "Message Text!"
-                halign: "center"
-                valign: "middle"
-                font_size: '30dp'
-                text_size: self.size # enable text wrapping
+<InfoPage>:
+    id: '_info_page_'
+    name: '_info_page_'
+    GridLayout:
+        cols: 1
+        Label:
+            id: message
+            text: "Message Text!"
+            halign: "center"
+            valign: "middle"
+            font_size: '30dp'
+            text_size: self.size # enable text wrapping
 
-    <CamPage>:
+<CamPage>:
+    GridLayout:
+        rows: 2
+        spacing: 5, 5
+        padding: 5, 5
+        FloatLayout:
+            Image:
+                size: min(root.size), min(root.size)
+                pos_hint: {'center_x': .5, 'center_y': .5}
+                id: frame_data
+
+        AnchorLayout: 
+            anchor_x: 'center'
+            anchor_y: 'bottom'
+            size_hint_y: None
+            height: responsive_grid.height
+
+            MyResponsiveGridLayout:
+                id: responsive_grid
+                height: self.minimum_height
+
+                MyButton:
+                    id: tracker_button
+                    text: "Choose Tracker"
+                    on_release: root.tracker_button()
+                MyButton:
+                    id: select_button
+                    text: "Select ROI"
+                    on_release: root.select_button()
+                MyButton:
+                    id: clear_button
+                    text: "Clear ROI"
+                    on_release: root.clear_button()
+                MyButton:
+                    id: client_flip
+                    text: "Client Flip: "
+                    on_release: root.client_flip_button()
+                MyButton:
+                    id: server_flip
+                    text: "Server Flip: 1"
+                    on_release: root.server_flip_button()
+                MyButton:
+                    id: disconnect_button
+                    text: "Disconnect"
+                    on_release: root.disconnect_button()
+
+<TrackerPage>:
+    id: '_tracker_page_'
+    name: '_tracker_page_'
+    grid: grid
+    BoxLayout:
+        spacing: 5, 5
+        orientation: "vertical"
+        Label:
+            text: "Select a tracker by clicking its button:"
+            font_size: 20
+            size: self.texture_size
+            size_hint_y: None
         GridLayout:
-            rows: 2
+            id: grid
+            cols: 2
             spacing: 5, 5
             padding: 5, 5
-            FloatLayout:
-                Image:
-                    size: min(root.size), min(root.size)
-                    pos_hint: {'center_x': .5, 'center_y': .5}
-                    id: frame_data
-
-            AnchorLayout: 
-                anchor_x: 'center'
-                anchor_y: 'bottom'
-                size_hint_y: None
-                height: responsive_grid.height
-
-                MyResponsiveGridLayout:
-                    id: responsive_grid
-                    height: self.minimum_height
-
-                    MyButton:
-                        id: tracker_button
-                        text: "Choose Tracker"
-                        on_release: root.tracker_button()
-                    MyButton:
-                        id: select_button
-                        text: "Select ROI"
-                        on_release: root.select_button()
-                    MyButton:
-                        id: clear_button
-                        text: "Clear ROI"
-                        on_release: root.clear_button()
-                    MyButton:
-                        id: client_flip
-                        text: "Client Flip: "
-                        on_release: root.client_flip_button()
-                    MyButton:
-                        id: server_flip
-                        text: "Server Flip: 1"
-                        on_release: root.server_flip_button()
-                    MyButton:
-                        id: disconnect_button
-                        text: "Disconnect"
-                        on_release: root.disconnect_button()
-
-    <TrackerPage>:
-        id: '_tracker_page_'
-        name: '_tracker_page_'
-        grid: grid
-        BoxLayout:
-            spacing: 5, 5
-            orientation: "vertical"
-            Label:
-                text: "Select a tracker by clicking its button:"
-                font_size: 20
-                size: self.texture_size
-                size_hint_y: None
-            GridLayout:
-                id: grid
-                cols: 2
-                spacing: 5, 5
-                padding: 5, 5
     """
 
 
@@ -447,7 +464,7 @@ class ConnectPage(Screen):
             self.manager.current = 'info_page'
             Clock.schedule_once(self.connect, 1.0)
         else:
-            self.ids.connect_button.text = "Please enter IP Address and Port before clicking Connect"
+            self.ids.label_error.text = "Please enter IP Address and Port before clicking Connect"
 
     # Connects to the server
     # (second parameter is the time after which this function had been called,
