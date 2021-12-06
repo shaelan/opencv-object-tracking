@@ -7,7 +7,7 @@ import kivy
 import pickle
 import argparse
 import imagezmq
-import socket_client
+from socket_client import SocketClient
 
 from functools import partial
 from kivy.lang import Builder
@@ -58,6 +58,7 @@ IH_PORT = 5556
 
 tracker_index = None
 tracker_list = None
+client_socket = SocketClient
 
 root_widget = """
 #:kivy 1.10.0
@@ -470,6 +471,7 @@ class ConnectPage(Screen):
     # (second parameter is the time after which this function had been called,
     #  we don't care about it, but kivy sends it, so we have to receive it)
     def connect(self, _):
+        global client_socket
         # Get information for sockets client
         port = int(self.ids.port.text)
         ip = self.ids.ip.text
@@ -479,11 +481,12 @@ class ConnectPage(Screen):
         imageHub.connect("tcp://{}:{}".format(ip, IH_PORT))
         print("IH connect")
 
-        if not socket_client.connect(ip, port, show_error):
+        client_socket = SocketClient(ip, port)
+        if not client_socket.connect(show_error):
             return
 
         # specify initial server image-flip
-        socket_client.send(pickle.dumps(('set_flip', flip_list.index(ih_args.server_flip_code))))
+        client_socket.send(pickle.dumps(('set_flip', flip_list.index(ih_args.server_flip_code))))
 
         self.manager.current = 'cam_page'
 
@@ -509,9 +512,9 @@ class CamPage(Screen):
             self.ids.client_flip.text = 'Client Flip: ' + str(ih_args.flip_code)
             self.ids.server_flip.text = 'Server Flip: ' + str(ih_args.server_flip_code)
 
-        if not socket_client.listening:
+        if not client_socket.listening:
             print("socket startup")
-            socket_client.start_listening(self.incoming_message, show_error)
+            client_socket.start_listening(self.incoming_message, show_error)
             Clock.schedule_once(self.receive_frame)
 
     def receive_frame(self, _):
@@ -538,7 +541,7 @@ class CamPage(Screen):
         args = pickle.loads(message)
         if args[0] == 'disconnect_ok':
             print(args[0])
-            socket_client.listening = False
+            client_socket.listening = False
             App.get_running_app().stop()
 
         if args[0] == 'tracker_list':
@@ -549,37 +552,37 @@ class CamPage(Screen):
         if args[0] == 'raw_selection_data':
             r = cv2.selectROI('select', args[1], False, False)
             cv2.destroyWindow("select")
-            socket_client.send(pickle.dumps(('set_roi', args[1], r)))
+            client_socket.send(pickle.dumps(('set_roi', args[1], r)))
 
     def tracker_button(self):
-        print("requesting tracker list...")
-        socket_client.send(pickle.dumps(('trackers',)))
+        # print("requesting tracker list...")
+        client_socket.send(pickle.dumps(('trackers',)))
 
     def select_button(self):
-        print("requesting selection")
-        socket_client.send(pickle.dumps(('get_frame',)))
+        # print("requesting selection")
+        client_socket.send(pickle.dumps(('get_frame',)))
 
     def client_flip_button(self):
         flip_index = (flip_list.index(ih_args.flip_code) + 1) % 4
-        print(flip_index)
+        # print(flip_index)
         ih_args.flip_code = flip_list[flip_index]
         self.ids.client_flip.text = 'Client Flip: ' + str(ih_args.flip_code)
 
     def server_flip_button(self):
         server_flip_index = (flip_list.index(ih_args.server_flip_code) + 1) % 4
-        print(server_flip_index)
+        # print(server_flip_index)
         ih_args.server_flip_code = flip_list[server_flip_index]
-        socket_client.send(pickle.dumps(('set_flip', server_flip_index)))
+        client_socket.send(pickle.dumps(('set_flip', server_flip_index)))
         self.ids.server_flip.text = 'Server Flip: ' + str(ih_args.server_flip_code)
 
     def clear_button(selfself):
-        print("clear button")
-        socket_client.send(pickle.dumps(('clear_roi',)))
+        # print("clear button")
+        client_socket.send(pickle.dumps(('clear_roi',)))
 
     def disconnect_button(self):
-        print('requesting disconnect')
+        # print('requesting disconnect')
         Clock.unschedule(self.receive_frame)  # prevents race condition
-        socket_client.send(pickle.dumps(('disconnect',)))
+        client_socket.send(pickle.dumps(('disconnect',)))
 
 
 class TrackerPage(Screen):
@@ -608,7 +611,7 @@ class TrackerPage(Screen):
     def button_clicked(self, caller, number):
         # Send the tracker index in a message to server
         # return to the CamPage screen
-        socket_client.send(pickle.dumps(('set_tracker', number)))
+        client_socket.send(pickle.dumps(('set_tracker', number)))
         self.manager.current = 'cam_page'
 
 
@@ -636,7 +639,7 @@ class MyScreenManagerApp(App):
 
         try:
             # Connect to a given ip and port
-            socket_client.send(pickle.dumps(('disconnect',)))
+            client_socket.send(pickle.dumps(('disconnect',)))
         except Exception as e:
             print("No socket; app can close immediately")
             App.get_running_app().stop()
