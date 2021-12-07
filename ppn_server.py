@@ -83,7 +83,7 @@ def app_server_disconnect(client_socket, arg):
 def app_message(notified_socket, message):
     t = threads[notified_socket]
     t.my_queue.put(pickle.loads(message['data']))
-    # print('530 putting in queue: ', pickle.loads(message['data'])[0])
+    print('530 putting in queue: ', pickle.loads(message['data'])[0])
 
     if pickle.loads(message['data'])[0] == 'disconnect':
         print(t.name, 'shutting down thread')
@@ -137,9 +137,11 @@ class Streamer(threading.Thread):
         self.sender = sender_start(connect_to)
         self.vs = VideoStream(src=0).start()
 
-        self.offset_socket = SocketClient(ih_args.server_ip, ih_args.client_port)
-        self.has_socket = self.offset_socket.connect(show_error)
-
+        try:
+            self.offset_socket = SocketClient(ih_args.server_ip, ih_args.client_port)
+            self.has_socket = self.offset_socket.connect(show_error)
+        except Exception as ex:
+            print(ex)
         print("beginning outer try")
         '''
         New model for this:
@@ -168,6 +170,7 @@ class Streamer(threading.Thread):
                 val = self.my_queue.get_nowait()
                 if val:
                     message, *args = val
+                    print('173', message)
                     '''
                     disconnect ('disconnect', client_timeout_in_sec)
                         responds to the client with a disconnect_ok message once the video stream has been stopped.
@@ -249,6 +252,8 @@ class Streamer(threading.Thread):
                 self.my_queue.task_done()
             except queue.Empty:
                 pass
+            except Exception as x:
+                print(256, x)
 
             if frame_cropped_len:
                 x_displacement = 0
@@ -341,10 +346,12 @@ class Streamer(threading.Thread):
 
             try:
                 self.sender.send_image(self.client_name, frame)
-            except (zmq.ZMQError, zmq.ContextTerminated, zmq.Again):
+            except (zmq.ZMQError, zmq.ContextTerminated, zmq.Again) as e:
                 self.sender_stop()
-                print('Closing ImageSender.')
+                print('Closing ImageSender.', e)
                 break
+            except Exception as x:
+                print(354, x)
 
         # end while loop
         print("thread ending")

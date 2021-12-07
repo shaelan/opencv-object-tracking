@@ -38,6 +38,9 @@ class SocketClient:
         message_header = f"{len(message):<{HEADER_LENGTH}}".encode('utf-8')
         self.client_socket.sendall(message_header + message)
 
+    def is_listening(self):
+        return self.listening == True
+
     # Starts listening function in a thread
     # incoming_message_callback - callback to be called when new message arrives
     # error_callback - callback to be called on error

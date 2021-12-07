@@ -18,7 +18,9 @@ from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.properties import ObjectProperty
+from kivy.config import Config
 
+Config.set('kivy', 'exit_on_escape', '0')
 
 def int_with_none(value):
     if value == 'None':
@@ -49,15 +51,12 @@ ih_args = ap.parse_args()
 
 kivy.require("1.10.1")
 
-# initialize the frame dictionary
-frameDict = {}
-
 # For REP/REQ:
 imageHub = imagezmq.ImageHub()
 IH_PORT = 5556
 
-tracker_index = None
-tracker_list = None
+tracker_index = -1
+tracker_list = []
 client_socket = SocketClient
 
 root_widget = """
@@ -238,7 +237,6 @@ MyScreenManager:
             spacing: 5, 5
             padding: 5, 5
 """
-
 if ih_args.enable_flip_codes:
     root_widget = """
 #:kivy 1.10.0
@@ -429,10 +427,15 @@ MyScreenManager:
 
 
 class ConnectPage(Screen):
+    """
+    ConnectPage:
+    Controls display and interaction with elements on the connect page. This page requires an IP address and port to be
+    entered before attempting a connection.
+    """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        print("build connect page")
+        # print("build connect page")
         Clock.schedule_once(self.callback, 0.01)
 
     def callback(self, dt):
@@ -454,7 +457,7 @@ class ConnectPage(Screen):
         self.ids.ip.text = prev_ip
 
     def connect_button(self):
-        print("Pushed connect button")
+        # print("Pushed connect button")
         port = self.ids.port.text
         ip = self.ids.ip.text
         if port and ip:
@@ -476,10 +479,10 @@ class ConnectPage(Screen):
         port = int(self.ids.port.text)
         ip = self.ids.ip.text
 
-        print("Prepare IH...")
+        # print("Prepare IH...")
         # initialize the ImageHub object
         imageHub.connect("tcp://{}:{}".format(ip, IH_PORT))
-        print("IH connect")
+        # print("IH connect")
 
         client_socket = SocketClient(ip, port)
         if not client_socket.connect(show_error):
@@ -494,7 +497,7 @@ class ConnectPage(Screen):
 class InfoPage(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        print("build info page")
+        # print("build info page")
 
     # Called with a message, to update message text in widget
     def update_info(self, message):
@@ -504,7 +507,7 @@ class InfoPage(Screen):
 class CamPage(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        print("build cam page")
+        # print("build cam page")
 
     def on_pre_enter(self, *args):
         # must not happen on init, but can happen on start
@@ -512,7 +515,9 @@ class CamPage(Screen):
             self.ids.client_flip.text = 'Client Flip: ' + str(ih_args.flip_code)
             self.ids.server_flip.text = 'Server Flip: ' + str(ih_args.server_flip_code)
 
-        if not client_socket.listening:
+        # If the brackets are removed, this makes the server crash without throwing an exception, so it's caught and
+        # not emitted.
+        if not client_socket.is_listening():
             print("socket startup")
             client_socket.start_listening(self.incoming_message, show_error)
             Clock.schedule_once(self.receive_frame)
@@ -523,8 +528,6 @@ class CamPage(Screen):
         imageHub.send_reply(b'OK')
         if ih_args.flip_code is not None:
             frame = cv2.flip(frame, ih_args.flip_code)
-
-        frameDict[rpiName] = frame
 
         buf = frame.tobytes()
         image_texture = Texture.create(size=(frame.shape[1], frame.shape[0]), colorfmt='bgr')
@@ -539,8 +542,8 @@ class CamPage(Screen):
     # Called from sockets client on new message receipt
     def incoming_message(self, message):
         args = pickle.loads(message)
+        print(args[0])
         if args[0] == 'disconnect_ok':
-            print(args[0])
             client_socket.listening = False
             App.get_running_app().stop()
 
@@ -575,7 +578,7 @@ class CamPage(Screen):
         client_socket.send(pickle.dumps(('set_flip', server_flip_index)))
         self.ids.server_flip.text = 'Server Flip: ' + str(ih_args.server_flip_code)
 
-    def clear_button(selfself):
+    def clear_button(self):
         # print("clear button")
         client_socket.send(pickle.dumps(('clear_roi',)))
 
@@ -596,7 +599,6 @@ class TrackerPage(Screen):
         self.remove_buttons()
 
     def update(self, dt):
-        global tracker_list, tracker_index
         for index, val in enumerate(tracker_list):
             if index == tracker_index:
                 text = '[ ' + tracker_list[index] + ' ]'
@@ -624,7 +626,7 @@ class MyScreenManager(ScreenManager):
 class MyScreenManagerApp(App):
     def build(self):
         self.title = 'DA-RD-2'
-        Window.bind(on_request_close=self.on_request_close)
+        Window.bind(on_request_close=self.shutdown_app_gracefully)
         Window.bind(on_resize=self.check_resize)
         return Builder.load_string(root_widget)
 
@@ -634,14 +636,20 @@ class MyScreenManagerApp(App):
             if width >= 400:
                 win_ref.ids.connect_page.ids.connect_button.width = 76
 
-    def on_request_close(self, _):
+    # This is not probably waiting for the actual app closure hence the hang on [X] click.
+    def shutdown_app_gracefully(self, _):
         print("initiating disconnect...")
 
         try:
-            # Connect to a given ip and port
             client_socket.send(pickle.dumps(('disconnect',)))
+            # The script has to wait here, until the disconnect_ok message is received.
+            # Once received, that message asks the socket to close by stopping its thread.
+            # Test for !socket.is_listening()
+            while client_socket.is_listening():
+                pass
+            App.get_running_app().stop()
         except Exception as e:
-            print("No socket; app can close immediately")
+            print("No socket; app can close immediately", e)
             App.get_running_app().stop()
             return False
 
