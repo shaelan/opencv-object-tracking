@@ -57,7 +57,7 @@ def sender_start(connect_to=None):
 
 
 def show_error(message):
-    print('ERROR: ', message)
+    print('Offset communications ERROR: ', message)
 
 
 def app_server_connect(client_socket):
@@ -137,11 +137,9 @@ class Streamer(threading.Thread):
         self.sender = sender_start(connect_to)
         self.vs = VideoStream(src=0).start()
 
-        try:
-            self.offset_socket = SocketClient(ih_args.server_ip, ih_args.client_port)
-            self.has_socket = self.offset_socket.connect(show_error)
-        except Exception as ex:
-            print(ex)
+        self.offset_socket = SocketClient(ih_args.server_ip, ih_args.client_port)
+        self.has_socket = self.offset_socket.connect(show_error)
+
         print("beginning outer try")
         '''
         New model for this:
@@ -197,6 +195,11 @@ class Streamer(threading.Thread):
                             del self.tracker
                             self.tracker = self.setup_tracker()
                             self.tracker_ok = self.tracker.init(self.roi_frame, self.roi)
+                            if not self.has_socket:
+                                self.offset_socket = SocketClient(ih_args.server_ip, ih_args.client_port)
+                                self.has_socket = self.offset_socket.connect(show_error)
+                                if self.has_socket:
+                                    print("set ROI; displacement socket opened")
 
                     '''
                     get_frame  ('get_frame')
@@ -213,7 +216,14 @@ class Streamer(threading.Thread):
                         self.roi = None
                         frame_cropped_len = 0
                         if self.has_socket:
-                            self.offset_socket.send(pickle.dumps((0, 0)))
+                            try:
+                                self.offset_socket.send(pickle.dumps((False, 0, 0)))
+                                self.offset_socket.client_socket.close()
+                                print("roi cleared; displacement socket closed")
+                            except Exception as ex:
+                                print(ex, "; displacement socket closed")
+                            finally:
+                                self.has_socket = False
 
                     '''
                     trackers ('trackers')
@@ -240,6 +250,11 @@ class Streamer(threading.Thread):
                                 del self.tracker
                                 self.tracker = self.setup_tracker()
                                 self.tracker_ok = self.tracker.init(self.roi_frame, self.roi)
+                                if not self.has_socket:
+                                    self.offset_socket = SocketClient(ih_args.server_ip, ih_args.client_port)
+                                    self.has_socket = self.offset_socket.connect(show_error)
+                                    if self.has_socket:
+                                        print("set tracker; displacement socket opened")
 
                     '''flip ('flip', flip_index)
                         adjusts the value stored in ih_args.flip_code) for the server-side call to cv2.flip 
@@ -313,15 +328,22 @@ class Streamer(threading.Thread):
                     y_displacement = crosshair_col - target_y
 
                     if self.has_socket:
-                        self.offset_socket.send(pickle.dumps((x_displacement, y_displacement)))
-
+                        try:
+                            self.offset_socket.send(pickle.dumps((True, x_displacement, y_displacement)))
+                        except Exception as ex:
+                            print(340, ex, "; displacement socket closed")
+                            self.has_socket = False
                 else:
                     # Tracking failure
                     cv2.putText(tracker_frame, "Tracking failure detected", (20, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.75,
                                 (170, 50, 50), 2)
 
                     if self.has_socket:
-                        self.offset_socket.send(pickle.dumps((0, 0)))
+                        try:
+                            self.offset_socket.send(pickle.dumps((False, 0, 0)))
+                        except Exception as ex:
+                            print(353, ex, "; displacement socket closed")
+                            self.has_socket = False
 
                 # Display tracker type on frame
                 cv2.putText(tracker_frame, self.tracker_type + " Tracker", (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.75,
@@ -352,7 +374,12 @@ class Streamer(threading.Thread):
                 break
             except Exception as x:
                 print(354, x)
-
+            '''
+            except (ConnectionResetError, ConnectionAbortedError, ConnectionRefusedError, ConnectionError) as c:
+                self.sender_stop()
+                print('*** Closing ImageSender.', c)
+                break
+            '''
         # end while loop
         print("thread ending")
 
@@ -382,10 +409,7 @@ class Streamer(threading.Thread):
 
 
 def main():
-    socket_server.bind_and_listen(ih_args.server_ip, PORT,
-                                  app_server_connect, app_server_disconnect, app_message)
-    while True:
-        continue
+    socket_server.bind_and_listen(ih_args.server_ip, PORT, app_server_connect, app_server_disconnect, app_message)
 
 
 if __name__ == '__main__':

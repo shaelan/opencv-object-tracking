@@ -24,7 +24,10 @@ def receive_message(client_socket):
 def send_message(client_socket, message_tuple):
     message = pickle.dumps(message_tuple)
     message_header = f"{len(message):<{HEADER_LENGTH}}".encode('utf-8')
-    client_socket.sendall(message_header + message)
+    try:
+        client_socket.sendall(message_header + message)
+    except Exception as ex:
+        print(__name__, "send_message caught exception", ex)
 
 
 def stop_listening():
