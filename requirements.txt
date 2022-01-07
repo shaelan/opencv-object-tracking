@@ -1,9 +1,13 @@
+dronekit==2.9.2
+dronekit-sitl==3.3.0
 imagezmq==1.1.1
 imutils==0.5.4
 Kivy==2.0.0
 matplotlib==3.5.1
+MAVProxy==1.8.46
 numpy==1.21.3
 opencv-contrib-python==4.5.4.58
+pymavlink==2.4.8
 PySimpleGUI==4.55.1
 pyzmq==22.3.0
 simple-pid==1.0.1

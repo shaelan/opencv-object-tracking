@@ -15,11 +15,16 @@ import time
 from simple_pid import PID
 import threading
 
+# dronekit imports
+from pymavlink import mavutil  # needed for command message definitions
+from dronekit import connect, VehicleMode
+
 # gui imports
 import PySimpleGUI as sg
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+
 
 class Tracker:
     def __init__(self, addr, port, d):
@@ -29,6 +34,10 @@ class Tracker:
         for component in ('x', 'y'):
             for k in self.d:
                 setattr(self, '{}_{}'.format(component, k), self.d[k])
+        self.x_displacement = 0
+        self.y_displacement = 0
+        self.frame_shape_0 = 0
+        self.frame_shape_1 = 0
 
         self.x_PID = PID(self.x_kp, self.x_ki, self.x_kd, setpoint=self.x_setpoint, sample_time=self.x_sample_frequency,
                          output_limits=(self.x_lower_limit, self.x_upper_limit))
@@ -43,7 +52,7 @@ class Tracker:
 
     def refresh_pid_parameters(self, my_key, my_value):
         setattr(self, my_key, my_value)
-        print("set {} to {}".format(my_key,my_value))
+        print("set {} to {}".format(my_key, my_value))
         self.x_PID.Kp = self.x_kp
         self.x_PID.Ki = self.x_ki
         self.x_PID.Kd = self.x_kd
@@ -71,34 +80,22 @@ class Tracker:
 
     def displacement_received(self, __, message):
         """
-        This method is called each time the socket_server script receives a message.
+        This method is called each time the socket_server created by this script receives a message.
         The ppn_server script is configured to send them while tracking, if this endpoint accepts the connection.
 
-        The first argument is a reference to the socket who delivered this message but it is not used here
+        The first argument (__) is a reference to the socket who delivered this message but it is not used here
         message: a dictionary containing keys 'header' and 'data'. The 'data' key is pickle-encoded.
         """
         values = pickle.loads(message['data'])
-        # Currently 'values' is an (B, x, y) tuple; B is a boolean to indicate the tracking status
-        self.is_tracking, self.x_displacement, self.y_displacement = values
+        # Currently 'values' is an (B, x, y, fs1, fs0) tuple; B is a boolean to indicate the tracking status
+        # fs1 is frame.shape[1] from the image, fs0 is frame.shape[0] from the image. These are width and height.
+        self.is_tracking = False
+        try:
+            self.is_tracking, self.x_displacement, self.y_displacement, self.frame_shape_1, self.frame_shape_0 = values
+        except ValueError as e:
+            print(e)
 
-        # the displacement is scaled to a value between -1 and 1. In future, 'values' will contain video resolution
-        x_scaled = self.x_displacement / 320 # hardcoded video resolution for now
-        y_scaled = self.y_displacement / 240 # hardcoded video resolution for now
-
-        if self.is_tracking:
-            x_offset = x_scaled
-            x_control_variable = self.x_PID(x_offset)
-
-            y_offset = y_scaled
-            y_control_variable = self.y_PID(y_offset)
-        else:
-            x_control_variable = y_control_variable = x_offset = y_offset = 0
-
-        self.PID_outputs['x_offset'] = x_offset
-        self.PID_outputs['x_control_variable'] = x_control_variable
-        self.PID_outputs['y_offset'] = y_offset
-        self.PID_outputs['y_control_variable'] = y_control_variable
-
+        self.update_pid_controllers()
         """
         # this is the old method of doing this.
         current_time = time.time()
@@ -142,12 +139,118 @@ class Tracker:
         # print("displacement: ", self.is_tracking, "received x=", self.x_displacement, "y=", self.y_displacement)
         """
 
+    def update_pid_controllers(self):
+        if self.is_tracking:
+            # the offset is scaled to a value between -1 and 1.
+            x_offset = (self.x_displacement / (self.frame_shape_1 * 0.5))
+            x_control_variable = self.x_PID(x_offset)
+
+            y_offset = (self.y_displacement / (self.frame_shape_0 * 0.5))
+            y_control_variable = self.y_PID(y_offset)
+        else:
+            x_control_variable = y_control_variable = x_offset = y_offset = 0
+        print("x: {}, {}, y: {}, {}".format(x_offset, x_control_variable, y_offset, y_control_variable))
+        if args.drone_control:
+            """
+            the args are: forward (positive for 'forward'), right (positive for 'right'), down (positive for 'down')
+            the offsets are x (right is positive ), and y (down is negative).
+            """
+            send_frd_velocity(0, -x_control_variable, y_control_variable, 1)
+
+        self.PID_outputs['x_offset'] = x_offset
+        self.PID_outputs['x_control_variable'] = x_control_variable
+        self.PID_outputs['y_offset'] = y_offset
+        self.PID_outputs['y_control_variable'] = y_control_variable
+
     def connect(self, client_socket):
         self.my_socket = client_socket
 
     def disconnect(self, __, arg):
         self.my_socket = None
         self.is_tracking = False
+        self.update_pid_controllers()
+
+# vehicle methods
+def arm_and_takeoff(target_altitude):
+    """
+    Arms vehicle and fly to aTargetAltitude.
+    """
+
+    print("Basic pre-arm checks")
+    # Don't try to arm until autopilot is ready
+    while not vehicle.is_armable:
+        print(" Waiting for vehicle to initialise...")
+        time.sleep(1)
+
+    print("Arming motors")
+    # Copter should arm in GUIDED mode
+    vehicle.mode = VehicleMode("GUIDED")
+    vehicle.armed = True
+
+    # Confirm vehicle armed before attempting to take off
+    while not vehicle.armed:
+        print(" Waiting for arming...")
+        time.sleep(1)
+
+    print("Taking off!")
+    vehicle.simple_takeoff(target_altitude)  # Take off to target altitude
+
+    # Wait until the vehicle reaches a safe height before processing the goto (otherwise the command
+    #  after Vehicle.simple_takeoff will execute immediately).
+    while True:
+        print(" Altitude: "), vehicle.location.global_relative_frame.alt
+        # Break and return from function just below target altitude.
+        if vehicle.location.global_relative_frame.alt >= target_altitude * 0.95:
+            print("Reached target altitude")
+            break
+        time.sleep(1)
+
+
+def send_frd_velocity(velocity_x, velocity_y, velocity_z, duration):
+    """
+    Move vehicle in direction based on specified velocity vectors.
+    """
+    # No method "set_position_target_local_frd_encode"
+    msg = vehicle.message_factory.set_position_target_local_ned_encode(
+        0,  # time_boot_ms (not used)
+        0, 0,  # target system, target component
+        # mavutil.mavlink.MAV_FRAME_BODY_FRD,  # frame
+        mavutil.mavlink.MAV_FRAME_BODY_OFFSET_NED,  # frame
+        0b0000111111000111,  # type_mask (only speeds enabled)
+        0, 0, 0,  # x, y, z positions (not used)
+        velocity_x, velocity_y, velocity_z,  # x, y, z velocity in m/s
+        0, 0, 0,  # x, y, z acceleration (not supported yet, ignored in GCS_Mavlink)
+        0, 0)  # yaw, yaw_rate (not supported yet, ignored in GCS_Mavlink)
+
+    # send command to vehicle on 1 Hz cycle
+    # for x in range(0, duration):
+    vehicle.send_mavlink(msg)
+    #     time.sleep(duration)
+
+
+def send_global_velocity(velocity_x, velocity_y, velocity_z, duration):
+    """
+    Move vehicle in direction based on specified velocity vectors.
+    """
+    msg = vehicle.message_factory.set_position_target_global_int_encode(
+        0,  # time_boot_ms (not used)
+        0, 0,  # target system, target component
+        mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,  # frame
+        0b0000111111000111,  # type_mask (only speeds enabled)
+        0,  # lat_int - X Position in WGS84 frame in 1e7 * meters
+        0,  # lon_int - Y Position in WGS84 frame in 1e7 * meters
+        0,  # alt - Altitude in meters in AMSL altitude(not WGS84 if absolute or relative)
+        # altitude above terrain if GLOBAL_TERRAIN_ALT_INT
+        velocity_x,  # X velocity in NED frame in m/s
+        velocity_y,  # Y velocity in NED frame in m/s
+        velocity_z,  # Z velocity in NED frame in m/s
+        0, 0, 0,  # afx, afy, afz acceleration (not supported yet, ignored in GCS_Mavlink)
+        0, 0)  # yaw, yaw_rate (not supported yet, ignored in GCS_Mavlink)
+
+    # send command to vehicle on 1 Hz cycle
+    # for x in range(0, duration):
+    vehicle.send_mavlink(msg)
+    #     time.sleep(duration)
 
 
 # graph helper
@@ -158,7 +261,7 @@ def draw_figure(my_canvas, figure, loc=(0, 0)):
     return figure_canvas_agg
 
 
-# window helpers
+# gui helpers
 def make_key(my_component, s_key):
     return '-{}_{}-'.format(my_component, s_key)
 
@@ -171,29 +274,28 @@ def horizontal_slider(my_component, text_label, s_key, s_resolution, s_range, s_
 
 def the_gui():
     # to get the granularity of the graph, divide window_length by delta_time.
-    # other than that, delta_time is not used.
+    # other than that, delta_time is used only to set the window timeout (delta_time * window_length)
     delta_time = 0.1
     window_length = 10
 
-    plot_time = np.arange(0, window_length, delta_time)             # x axis for all plots
-    plot_x_offset = [0] * int(window_length / delta_time)           # y 1
-    plot_x_control_variable = [0] * int(window_length / delta_time) # y 2
-    plot_y_offset = [0] * int(window_length / delta_time)           # y 3
-    plot_y_control_variable = [0] * int(window_length / delta_time) # y 4
+    plot_time = np.arange(0, window_length, delta_time)  # x axis for all plots
+    plot_x_offset = [0] * int(window_length / delta_time)  # y 1
+    plot_x_control_variable = [0] * int(window_length / delta_time)  # y 2
+    plot_y_offset = [0] * int(window_length / delta_time)  # y 3
+    plot_y_control_variable = [0] * int(window_length / delta_time)  # y 4
 
     row_label = ['KP Gain', 'Ki Gain', 'Kd Gain', 'Lower Limit', 'Upper Limit', 'Sample Freq', 'Setpoint']
     slider_key = ['kp', 'ki', 'kd', 'lower_limit', 'upper_limit', 'sample_frequency', 'setpoint']
     slider_range = tuple([(0, 1)] * 3) + tuple([(-1, 1)] * 2) + ((1, 100), (0, 10))
     slider_resolution = tuple([0.01] * 3) + tuple([0.05] * 2) + tuple([1] * 2)
 
-
     """
-    Here are the definitions for the default PID values.
+    Below are the definitions for the default PID values.
     Both PIDs are supplied with the same defaults.
     The limits are set to -1 and +1
     Sample frequency is measured in Hz as specified.
     In the code, this is converted to a time in seconds (what the PID controller is expecting for sample_time)
-    setpoint is 0 - which means the controller will attempt to use movement to minimise the error.
+    setpoint is 0 - which means the controller will attempt to use movement to minimise (zero) the displacement.
     """
 
     default_tracker_variables = {'kp': 1, 'ki': 0.1, 'kd': 0.05,
@@ -219,18 +321,12 @@ def the_gui():
     """
     import the Tracker, set it up, and then we can send updates to its values from the GUI
     """
-    ap = argparse.ArgumentParser()
-    ap.add_argument("-p", "--port", required=False, type=int, default=14560,
-                    help="port for data offset receipt")
-    args = ap.parse_args()
     t = Tracker('127.0.0.1', args.port, default_tracker_variables)
 
-    tracking_states = ["off", "on"] # for the graph title
+    tracking_states = ["off", "on"]  # for the graph title
 
     canvas_elem = window['-CANVAS-']
     canvas = canvas_elem.TKCanvas
-
-    # draw the initial plot in the window
 
     # draw the initial plot in the window
     fig = Figure()
@@ -249,48 +345,45 @@ def the_gui():
     threading.Thread(target=socket_server.bind_and_listen,
                      args=(t.addr, t.port, t.connect, t.disconnect, t.displacement_received), daemon=True).start()
 
+    # force window to draw quickly
+    event, values = window.read(timeout=0)
+
     last_time = time.time()
-    total_time = 0
-    start_time = last_time
     while True:  # Main GUI Event Loop
-        event, values = window.read(timeout=int(window_length * delta_time ))
+
+        event, values = window.read(timeout=int(window_length * delta_time))
+
         # event handler
-        if event:
-            if event in (sg.WIN_CLOSED, 'Exit'):
-                break
+        if event in (sg.WIN_CLOSED, 'Exit') or event == None:
+            break
 
-            elif event == 'Show':
-                for component in ('x', 'y'):
-                    for i in range(0, 7):
-                        the_label = '{} {} = {}'.format(component.upper(), row_label[i],
-                                                        values[make_key(component, slider_key[i])])
-                        print(the_label)
-            else:
-                # did a slider value change?
-                search_key = event[3:-1]
-                res = [(val, key) for key, val in default_tracker_variables.items() if search_key in key]
-                if res:  # yes it did. update the value in the dict.
-                    my_key = event[1:-1]
-                    prior_value = getattr(t, my_key)
+        if event == 'Show':
+            for component in ('x', 'y'):
+                for i in range(0, 7):
+                    the_label = '{} {} = {}'.format(component.upper(), row_label[i],
+                                                    values[make_key(component, slider_key[i])])
+                    print(the_label)
+        else:
+            # did a slider value change?
+            search_key = event[3:-1]
+            res = [(val, key) for key, val in default_tracker_variables.items() if search_key in key]
+            if res:  # yes it did. update the value in the dict.
+                my_key = event[1:-1]
+                prior_value = getattr(t, my_key)
 
-                    try:
-                        t.refresh_pid_parameters(my_key, values[event])
-                    except ValueError as e:
-                        print(e)
-                        setattr(t, my_key, prior_value)
-                        window[event].update(prior_value)
+                try:
+                    t.refresh_pid_parameters(my_key, values[event])
+                except ValueError as e:
+                    print(e)
+                    setattr(t, my_key, prior_value)
+                    window[event].update(prior_value)
 
-                    print("Set tracker value {}: {}".format(my_key, values[event]))
+                print("Set tracker value {}: {}".format(my_key, values[event]))
 
         # graph renderer
         current_time = time.time()
         dt = current_time - last_time
         last_time = time.time()
-
-        # output for testing is disabled
-        # Shift the x axis by dt
-        # total_time = total_time + dt
-        # print(current_time, last_time, dt, time.time() - start_time, total_time)
 
         plot_time[:-1] = plot_time[1:]
         plot_time[-1] = plot_time[-1] + dt
@@ -332,4 +425,27 @@ def the_gui():
 
 
 if __name__ == '__main__':
+    ap = argparse.ArgumentParser()
+    ap.add_argument("-p", "--port", required=False, type=int, default=14560,
+                    help="port for data offset receipt")
+    ap.add_argument("-d", "--drone-control", type=bool, required=False, default=False,
+                    help="enable or disable drone control (this script connects to a drone on the default port)")
+    args = ap.parse_args()
+    vehicle = None
+
+    if args.drone_control:
+        vehicle = connect('tcp:127.0.0.1:5762', wait_ready=True)
+        vehicle.home_location = vehicle.location.global_frame
+        arm_and_takeoff(20)
+
     the_gui()
+
+    if args.drone_control:
+        vehicle.close()
+
+# For testing with mission planner, please run the following commands in two seperate terminals:
+# dronekit-sitl copter --home= 48.509988, -123.415530,59,353
+# then
+# mavproxy --master tcp:127.0.0.1:5760 --sitl 127.0.0.1:5501 --out 127.0.0.1:14550
+# Then start mission planner and connect to the SITL copter to visualize flight
+# Then, run this script. Please make sure you use the -d argument set to True or it won't connect.

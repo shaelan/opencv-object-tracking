@@ -1,5 +1,6 @@
 import socket
 import cv2
+import time
 import queue
 import pickle
 import imagezmq
@@ -175,6 +176,12 @@ class Streamer(threading.Thread):
                         note: a timeout of 0 means the client has already disconnected, so no response is issued.
                     '''
                     if message == 'disconnect':
+                        try:
+                            self.offset_socket.send(pickle.dumps((False, 0, 0, 0, 0)))
+                        except Exception as ex:
+                            print(353, ex, "; displacement socket closed")
+                            self.has_socket = False
+                        print("*** disconnect ***")
                         self.sender_stop()
                         self.my_queue.task_done()
                         break
@@ -217,7 +224,7 @@ class Streamer(threading.Thread):
                         frame_cropped_len = 0
                         if self.has_socket:
                             try:
-                                self.offset_socket.send(pickle.dumps((False, 0, 0)))
+                                self.offset_socket.send(pickle.dumps((False, 0, 0, 0, 0)))
                                 self.offset_socket.client_socket.close()
                                 print("roi cleared; displacement socket closed")
                             except Exception as ex:
@@ -329,7 +336,9 @@ class Streamer(threading.Thread):
 
                     if self.has_socket:
                         try:
-                            self.offset_socket.send(pickle.dumps((True, x_displacement, y_displacement)))
+                            self.offset_socket.send(pickle.dumps((True, x_displacement, y_displacement,
+                                                                  frame.shape[1], frame.shape[0]
+                                                                  )))
                         except Exception as ex:
                             print(340, ex, "; displacement socket closed")
                             self.has_socket = False
@@ -340,7 +349,7 @@ class Streamer(threading.Thread):
 
                     if self.has_socket:
                         try:
-                            self.offset_socket.send(pickle.dumps((False, 0, 0)))
+                            self.offset_socket.send(pickle.dumps((False, 0, 0, 0, 0)))
                         except Exception as ex:
                             print(353, ex, "; displacement socket closed")
                             self.has_socket = False
@@ -364,22 +373,19 @@ class Streamer(threading.Thread):
                             cv2.FONT_HERSHEY_SIMPLEX,
                             0.75,
                             (50, 170, 50), 2)
+
                 frame = tracker_frame
 
             try:
                 self.sender.send_image(self.client_name, frame)
             except (zmq.ZMQError, zmq.ContextTerminated, zmq.Again) as e:
-                self.sender_stop()
+                self.sender.close()
                 print('Closing ImageSender.', e)
-                break
+                time.sleep(0.5)
+                self.sender = sender_start(connect_to)
             except Exception as x:
                 print(354, x)
-            '''
-            except (ConnectionResetError, ConnectionAbortedError, ConnectionRefusedError, ConnectionError) as c:
-                self.sender_stop()
-                print('*** Closing ImageSender.', c)
-                break
-            '''
+
         # end while loop
         print("thread ending")
 
